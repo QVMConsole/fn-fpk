@@ -10,6 +10,7 @@ GUESTFS_SUPERMIN_DIR="${QVMC_GUESTFS_SUPERMIN_DIR:-/usr/lib/x86_64-linux-gnu/gue
 MANAGED_NETWORK="${QVMC_MANAGED_NETWORK:-qvmconsole-fnos}"
 NVRAM_HOOK_MARKER="# qvmconsole-manager: fnOS NVRAM compatibility"
 APPARMOR_DIR="${QVMC_APPARMOR_DIR:-/etc/apparmor.d}"
+FSTAB_PATH="${QVMC_FSTAB_PATH:-/etc/fstab}"
 APPARMOR_BLOCK_BEGIN="# BEGIN qvmconsole-manager fnOS storage access"
 APPARMOR_BLOCK_END="# END qvmconsole-manager fnOS storage access"
 FAILED=0
@@ -83,6 +84,27 @@ remove_managed_apparmor_file() {
   fi
 }
 
+remove_user_storage_fstab() {
+  local temporary
+  if [ ! -f "$FSTAB_PATH" ]; then
+    return 0
+  fi
+  temporary="$(mktemp "${FSTAB_PATH}.qvmconsole.XXXXXX")" || {
+    fail "无法创建 fstab 清理临时文件"
+    return 0
+  }
+  if ! awk '$2 != "/var/lib/kvm-user-storage" { print }' "$FSTAB_PATH" > "$temporary"; then
+    rm -f -- "$temporary"
+    fail "无法清理用户存储挂载配置"
+    return 0
+  fi
+  chmod --reference="$FSTAB_PATH" "$temporary" 2>/dev/null || chmod 644 "$temporary"
+  if ! mv -f -- "$temporary" "$FSTAB_PATH"; then
+    rm -f -- "$temporary"
+    fail "无法更新 $FSTAB_PATH"
+  fi
+}
+
 if [ "${TRIM_APP_STATUS:-}" = "UPGRADE" ]; then
   exit 0
 fi
@@ -146,6 +168,7 @@ if command -v apparmor_parser >/dev/null 2>&1 && [ -f "$APPARMOR_DIR/usr.lib.lib
 fi
 remove_file "$GUESTFS_SUPERMIN_DIR/packages-qvmconsole"
 remove_file "$GUESTFS_SUPERMIN_DIR/hostfiles-qvmconsole"
+remove_user_storage_fstab
 
 if command -v virsh >/dev/null 2>&1 && virsh net-info "$MANAGED_NETWORK" >/dev/null 2>&1; then
   virsh net-destroy "$MANAGED_NETWORK" >/dev/null 2>&1 || true

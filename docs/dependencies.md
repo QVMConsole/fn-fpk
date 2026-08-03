@@ -32,7 +32,7 @@ bash scripts/build-fpk.sh
 设备需具备以下系统能力：
 
 - x86_64 Linux 与飞牛 fnOS 1.2.0 及以上；
-- systemd、bash、tar、acl（提供 `setfacl`）；
+- systemd、bash、tar、util-linux（提供 `findmnt`、`mount` 和 `mountpoint`）、acl（提供 `setfacl`）；
 - `/dev/kvm`；
 - 可访问 QVMConsole 下载地址和 HIBP 密码泄露检测服务。
 

@@ -19,6 +19,6 @@ bash scripts/build-fpk.sh
 输出：
 
 ```text
-dist/qvmconsole-manager-1.0.29-x86_64.fpk
-dist/qvmconsole-manager-1.0.29-x86_64.fpk.sha256
+dist/qvmconsole-manager-1.0.30-x86_64.fpk
+dist/qvmconsole-manager-1.0.30-x86_64.fpk.sha256
 ```

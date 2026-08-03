@@ -44,6 +44,24 @@
 - 如果任务提示“选择的用户存储空间已不可用”，说明选择后挂载状态发生变化。重新挂载该存储空间、刷新列表并再次安装。
 - 根目录选项始终对应 `/var/lib/kvm-user-storage.img`，用于保持旧版默认行为。
 
+## 安装后重启进入 emergency mode
+
+1.0.29 及更早版本的上游安装脚本会把用户存储镜像作为强制 loop 挂载写入 `/etc/fstab`。镜像位于 `/volN` 时，systemd 可能在飞牛存储池就绪前尝试挂载；旧条目缺少 `nofail`，挂载失败会阻断系统启动。
+
+升级到 1.0.30 会自动迁移活动条目以及为临时恢复而手动注释的旧条目。修复后的配置应包含：
+
+```text
+nofail,x-systemd.automount,x-systemd.mount-timeout=30s
+```
+
+外置存储卷还会包含对应的 `x-systemd.requires-mounts-for=/volN`。可以使用以下命令检查，输出中不应再存在缺少 `nofail` 的活动条目：
+
+```bash
+grep '[[:space:]]/var/lib/kvm-user-storage[[:space:]]' /etc/fstab
+```
+
+如果设备已经进入紧急模式且 root 账号被锁定，可从 GRUB 临时追加 `init=/bin/bash`，将根文件系统重新挂载为可写后注释旧条目，再正常重启并覆盖安装 1.0.30。不要删除 `kvm-user-storage.img`，其中保存用户存储数据。
+
 更新、切换和修复失败后，日志中应出现“正在恢复备份”及恢复结果。不要在回滚过程中手动覆盖 `/opt/kvm-console`。
 
 ## 创建 Linux 虚拟机提示 guestfs_launch failed

@@ -1,3 +1,8 @@
 #!/bin/bash
-chmod 0755 "${TRIM_APPDEST}/server/qvmconsole-manager"
+APP_BIN="${TRIM_APPDEST}/server/qvmconsole-manager"
+chmod 0755 "$APP_BIN"
+"$APP_BIN" storage-mount-compat
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload
+fi
 exit 0

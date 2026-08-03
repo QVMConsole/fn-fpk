@@ -288,7 +288,9 @@ func (m *JobManager) execute(ctx context.Context, job *managedJob) error {
 
 	var backup string
 	preservedInstall := request.Action == "install" && (fileExists(filepath.Join(m.cfg.InstallDir, ".env")) || fileExists(filepath.Join(m.cfg.InstallDir, "data")))
-	if fileExists(m.cfg.InstallDir) && (request.Action != "install" || preservedInstall) {
+	fstabPath := filepath.Join(m.cfg.SystemRoot, "etc", "fstab")
+	needsBackup := request.Action != "uninstall" && (fileExists(m.cfg.InstallDir) || fileExists(fstabPath))
+	if needsBackup {
 		m.update(job, 12, "正在创建回滚备份")
 		wasActive := serviceActive(ctx, m.cfg.ServiceName)
 		if wasActive {
@@ -325,6 +327,9 @@ func (m *JobManager) execute(ctx context.Context, job *managedJob) error {
 		_ = os.Remove(m.cfg.ServiceFile())
 		if restoreErr := restoreSystemBackup(m.cfg, backup); restoreErr != nil {
 			return fmt.Errorf("%v；恢复备份同时失败: %v", reason, restoreErr)
+		}
+		if _, compatErr := EnsureUserStorageMountCompatibility(context.Background(), m.cfg); compatErr != nil {
+			return fmt.Errorf("%v；已恢复操作前备份，但修复用户存储启动挂载失败: %v", reason, compatErr)
 		}
 		_, _ = commandOutput(context.Background(), "systemctl", "daemon-reload")
 		_ = controlService(context.Background(), m.cfg, "restart")
@@ -419,11 +424,25 @@ func (m *JobManager) execute(ctx context.Context, job *managedJob) error {
 		if err := m.runCommand(ctx, job, input, "bash", scriptPath, "--non-interactive", "--mode", "uninstall"); err != nil {
 			return err
 		}
+		if _, err := RemoveUserStorageMountCompatibility(m.cfg); err != nil {
+			return err
+		}
+		_, _ = commandOutput(ctx, "systemctl", "daemon-reload")
 		state := loadRuntimeState(m.cfg)
 		state.Channel = ""
 		state.Version = ""
 		state.LastOperation = "uninstall"
 		return saveRuntimeState(m.cfg, state)
+	}
+
+	m.update(job, 80, "正在配置用户存储安全启动挂载")
+	fstabChanged, err := EnsureUserStorageMountCompatibility(ctx, m.cfg)
+	if err != nil {
+		return rollback(err)
+	}
+	if fstabChanged {
+		m.log(job, "已将用户存储迁移为不阻断 fnOS 启动的自动挂载")
+		_, _ = commandOutput(ctx, "systemctl", "daemon-reload")
 	}
 
 	m.update(job, 82, "正在验证 Linux 离线初始化环境")

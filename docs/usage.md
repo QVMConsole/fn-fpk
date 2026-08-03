@@ -12,14 +12,14 @@ QVMConsole 管理器是独立的飞牛 fnOS FPK。FPK 只包含管理器，不�
 ## 安装 FPK
 
 1. 在飞牛应用中心选择手动安装。
-2. 上传 `qvmconsole-manager-1.0.29-x86_64.fpk`。
+2. 上传 `qvmconsole-manager-1.0.30-x86_64.fpk`。
 3. 安装完成后，从飞牛桌面打开“QVMConsole 管理器”。
 4. 确认概览页中的 KVM、libvirt 和 Open vSwitch 状态。
 
 也可以在设备终端使用：
 
 ```bash
-appcenter-cli install-fpk /path/to/qvmconsole-manager-1.0.29-x86_64.fpk --volume 1
+appcenter-cli install-fpk /path/to/qvmconsole-manager-1.0.30-x86_64.fpk --volume 1
 appcenter-cli start qvmconsole-manager
 ```
 
@@ -45,6 +45,8 @@ appcenter-cli start qvmconsole-manager
 
 若检测到已有用户存储镜像，上游脚本会继续复用现有路径，不会根据本次选择迁移或覆盖数据。
 
+1.0.30 起，管理器会把上游安装器写入的强制启动挂载迁移为 systemd 自动挂载，并增加 `nofail`。镜像位于 `/volN` 等飞牛存储卷时，还会根据实际挂载点增加 `x-systemd.requires-mounts-for`，确保访问用户存储时先等待底层卷。用户存储挂载失败只影响 QVMConsole 的存储功能，不再阻断 fnOS 启动或进入紧急模式。安装、升级管理器以及启动管理器时都会自动修复 1.0.29 及更早版本留下的活动条目或手动注释条目。
+
 ### 安装前须知
 
 - QVMConsole 不调用飞牛官方虚拟机功能，而是独立基于 Linux libvirt 对接，以提供更底层的虚拟机能力。该方案通常可在发行版 Linux 上正常运行，但在飞牛系统上可能出现异常。
@@ -66,6 +68,7 @@ appcenter-cli start qvmconsole-manager
 
 - `/opt/kvm-console` 中的数据库、配置、二进制和前端；
 - `/etc/systemd/system/kvm-console.service`。
+- `/etc/fstab`，用于回滚上游安装脚本产生的用户存储挂载变更。
 
 脚本退出异常或健康检查失败时，管理器会停止目标服务、恢复备份、执行 `systemctl daemon-reload` 并重新启动原服务。最多保留最近三份系统级备份。
 

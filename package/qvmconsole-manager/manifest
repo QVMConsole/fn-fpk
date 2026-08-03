@@ -1,5 +1,5 @@
 appname=qvmconsole-manager
-version=1.0.29
+version=1.0.30
 display_name=QVMConsole 管理器
 desc=用于在飞牛 fnOS 上在线安装、更新和管理 QVMConsole，不在 FPK 内嵌入 QVMConsole 安装包。
 source=thirdparty
@@ -13,4 +13,4 @@ ctl_stop=true
 checkport=false
 install_type=root
 disable_authorization_path=true
-changelog=首次安装支持选择用户存储空间，并在执行前重新校验挂载点。
+changelog=修复用户存储强制挂载导致 fnOS 重启进入紧急模式的问题。

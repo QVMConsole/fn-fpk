@@ -31,6 +31,7 @@ func createSystemBackup(cfg Config, label string) (string, error) {
 		name string
 	}
 	items := []backupItem{
+		{path: filepath.Join(cfg.SystemRoot, "etc", "fstab"), name: systemArchiveName(cfg, filepath.Join(cfg.SystemRoot, "etc", "fstab"))},
 		{path: cfg.EnvPath(), name: systemArchiveName(cfg, cfg.EnvPath())},
 		{path: filepath.Join(cfg.InstallDir, "kvm-console"), name: systemArchiveName(cfg, filepath.Join(cfg.InstallDir, "kvm-console"))},
 		{path: filepath.Join(cfg.InstallDir, "kvm-console-native"), name: systemArchiveName(cfg, filepath.Join(cfg.InstallDir, "kvm-console-native"))},
