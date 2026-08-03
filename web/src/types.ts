@@ -10,6 +10,15 @@ export interface Channel {
   description: string;
 }
 
+export interface StorageOption {
+  path: string;
+  source?: string;
+  filesystem?: string;
+  totalBytes?: number;
+  availableBytes?: number;
+  default: boolean;
+}
+
 export interface Job {
   id: string;
   action: string;

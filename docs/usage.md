@@ -12,14 +12,14 @@ QVMConsole 管理器是独立的飞牛 fnOS FPK。FPK 只包含管理器，不�
 ## 安装 FPK
 
 1. 在飞牛应用中心选择手动安装。
-2. 上传 `qvmconsole-manager-1.0.28-x86_64.fpk`。
+2. 上传 `qvmconsole-manager-1.0.29-x86_64.fpk`。
 3. 安装完成后，从飞牛桌面打开“QVMConsole 管理器”。
 4. 确认概览页中的 KVM、libvirt 和 Open vSwitch 状态。
 
 也可以在设备终端使用：
 
 ```bash
-appcenter-cli install-fpk /path/to/qvmconsole-manager-1.0.28-x86_64.fpk --volume 1
+appcenter-cli install-fpk /path/to/qvmconsole-manager-1.0.29-x86_64.fpk --volume 1
 appcenter-cli start qvmconsole-manager
 ```
 
@@ -32,9 +32,18 @@ appcenter-cli start qvmconsole-manager
 1. 打开“安装与维护”。
 2. 选择“开源版”或“赞助版”。
 3. 设置服务端口，范围为 1024～65535。
-4. 阅读“安装前须知”，完成重要数据备份，并确认接受飞牛兼容性限制及系统变更风险。
-5. 确认允许执行 `apt update` 和安装缺失依赖。
-6. 点击安装并查看实时日志。任务执行期间，日志视图会始终自动滚动到最新输出。
+4. 选择“用户存储空间”。默认使用根目录，也可以选择已挂载、可写的本地存储卷。
+5. 阅读“安装前须知”，完成重要数据备份，并确认接受飞牛兼容性限制及系统变更风险。
+6. 确认允许执行 `apt update` 和安装缺失依赖。
+7. 点击安装并查看实时日志。任务执行期间，日志视图会始终自动滚动到最新输出。
+
+### 用户存储空间
+
+1.0.29 起，首次安装会列出根目录以及已挂载、可写的本地 `ext4`、`xfs` 或 `btrfs` 文件系统。列表显示设备、挂载点和可用容量，远程文件系统、只读文件系统和 QVMConsole 自身的配额挂载点不会显示。
+
+所选挂载点会通过受校验的 `--storage-dir` 参数传给上游安装脚本，用户存储镜像创建为 `<挂载点>/kvm-user-storage.img`；配额挂载点仍为 `/var/lib/kvm-user-storage`。任务入队和脚本执行前都会重新扫描挂载状态，已卸载或变为只读的存储空间会使安装安全终止。
+
+若检测到已有用户存储镜像，上游脚本会继续复用现有路径，不会根据本次选择迁移或覆盖数据。
 
 ### 安装前须知
 

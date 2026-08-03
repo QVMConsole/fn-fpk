@@ -44,7 +44,13 @@ body { background: #f4f6fa; }
 .install-options { margin-top: 18px; display: grid; gap: 14px; max-width: 720px; }
 .install-notice p { margin: 0; }
 .install-notice p + p { margin-top: 8px; }
-.install-options label { display: grid; grid-template-columns: 90px 220px; gap: 14px; align-items: center; }
+.install-options label,
+.install-field { display: grid; grid-template-columns: 110px minmax(0, 480px); gap: 14px; align-items: start; }
+.install-options label { align-items: center; }
+.install-field-control { min-width: 0; }
+.storage-select-row { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: 8px; align-items: center; }
+.storage-select-row .semi-select { width: 100%; min-width: 0; }
+.storage-option-detail { display: block; margin-top: 6px; overflow-wrap: anywhere; }
 .action-row { margin-top: 18px; }
 .log-view textarea { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace !important; font-size: 12px; line-height: 1.65; background: #111827 !important; color: #c9d4e7 !important; }
 .drawer-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
@@ -78,5 +84,6 @@ body[theme-mode='dark'] .channel-card p { color: #9ea9b9; }
   .app-header { padding: 16px; flex-direction: column; }
   .app-content { width: calc(100% - 24px); padding-top: 10px; }
   .metric-grid { grid-template-columns: 1fr; }
-  .install-options label { grid-template-columns: 1fr; }
+  .install-options label,
+  .install-field { grid-template-columns: 1fr; }
 }

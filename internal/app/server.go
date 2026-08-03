@@ -97,6 +97,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/session", s.handleSession)
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/channels", s.handleChannels)
+	mux.HandleFunc("GET /api/v1/storage-options", s.handleStorageOptions)
 	mux.HandleFunc("GET /api/v1/jobs", s.handleJobs)
 	mux.HandleFunc("POST /api/v1/jobs", s.handleStartJob)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", s.handleJob)
@@ -275,6 +276,17 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 
 func (s *Server) handleChannels(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, s.cfg.Catalog.Channels())
+}
+
+func (s *Server) handleStorageOptions(writer http.ResponseWriter, request *http.Request) {
+	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+	defer cancel()
+	options, err := listStorageOptions(ctx)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "storage_scan_failed", err.Error())
+		return
+	}
+	writeJSON(writer, http.StatusOK, options)
 }
 
 func (s *Server) handleJobs(writer http.ResponseWriter, _ *http.Request) {

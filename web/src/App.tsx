@@ -10,6 +10,7 @@ import Layout from '@douyinfe/semi-ui/lib/es/layout';
 import Modal from '@douyinfe/semi-ui/lib/es/modal';
 import Progress from '@douyinfe/semi-ui/lib/es/progress';
 import SideSheet from '@douyinfe/semi-ui/lib/es/sideSheet';
+import Select from '@douyinfe/semi-ui/lib/es/select';
 import Space from '@douyinfe/semi-ui/lib/es/space';
 import Spin from '@douyinfe/semi-ui/lib/es/spin';
 import Table from '@douyinfe/semi-ui/lib/es/table';
@@ -27,7 +28,7 @@ import IconRefresh from '@douyinfe/semi-icons/lib/es/icons/IconRefresh';
 import IconSetting from '@douyinfe/semi-icons/lib/es/icons/IconSetting';
 import IconStop from '@douyinfe/semi-icons/lib/es/icons/IconStop';
 import { ApiError, apiPath, loadSession, request } from './api';
-import type { Channel, Job, Session, Status, User } from './types';
+import type { Channel, Job, Session, Status, StorageOption, User } from './types';
 
 const { Header, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -47,6 +48,23 @@ function channelName(id: string, channels: Channel[]): string {
   return channels.find((item) => item.id === id)?.name || (id ? '未知渠道' : '未记录');
 }
 
+function formatStorageSize(bytes = 0): string {
+  if (bytes <= 0) return '未知';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function storageOptionLabel(option: StorageOption): string {
+  const name = option.default ? '根目录（默认）' : option.path;
+  return `${name} · 可用 ${formatStorageSize(option.availableBytes)} / ${formatStorageSize(option.totalBytes)}`;
+}
+
 export default function App() {
   const [session, setSession] = useState<Session>();
   const [status, setStatus] = useState<Status>();
@@ -56,6 +74,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [selectedChannel, setSelectedChannel] = useState<'open' | 'sponsor'>('open');
   const [installPort, setInstallPort] = useState<number>(8080);
+  const [storageOptions, setStorageOptions] = useState<StorageOption[]>([]);
+  const [selectedStorageDir, setSelectedStorageDir] = useState('');
+  const [storageOptionsLoading, setStorageOptionsLoading] = useState(false);
   const [riskConfirmed, setRiskConfirmed] = useState(false);
   const [dependencyConfirmed, setDependencyConfirmed] = useState(false);
   const [activeJob, setActiveJob] = useState<Job>();
@@ -97,6 +118,21 @@ export default function App() {
     setJobs(await request<Job[]>('/api/v1/jobs'));
   }, []);
 
+  const loadStorageOptions = useCallback(async () => {
+    try {
+      setStorageOptionsLoading(true);
+      const options = await request<StorageOption[]>('/api/v1/storage-options');
+      setStorageOptions(options);
+      setSelectedStorageDir((current) => options.some((option) => option.path === current) ? current : (options[0]?.path || ''));
+    } catch (error) {
+      setStorageOptions([]);
+      setSelectedStorageDir('');
+      Toast.error(errorMessage(error));
+    } finally {
+      setStorageOptionsLoading(false);
+    }
+  }, []);
+
   const loadUsers = useCallback(async () => {
     if (!status?.databasePresent) return;
     try {
@@ -135,6 +171,11 @@ export default function App() {
     if (!status?.databasePresent) return;
     void loadUsers();
   }, [loadUsers, status?.databasePresent]);
+
+  useEffect(() => {
+    if (!status || status.installed) return;
+    void loadStorageOptions();
+  }, [loadStorageOptions, status?.installed]);
 
   useEffect(() => {
     if (!activeJob || !['queued', 'running'].includes(activeJob.status)) return;
@@ -180,7 +221,7 @@ export default function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [jobLog, jobPanelVisible]);
 
-  const startJob = async (action: JobAction, options: { channel?: string; port?: number; purge?: boolean } = {}) => {
+  const startJob = async (action: JobAction, options: { channel?: string; port?: number; storageDir?: string; purge?: boolean } = {}) => {
     try {
       setSubmitting(true);
       setJobLog('');
@@ -309,6 +350,7 @@ export default function App() {
   const busy = Boolean(activeJob && ['queued', 'running'].includes(activeJob.status));
   const selectedIsCurrent = selectedChannel === status.channel;
   const updateChannel = channels.some((channel) => channel.id === status.channel) ? status.channel : selectedChannel;
+  const selectedStorage = storageOptions.find((option) => option.path === selectedStorageDir);
 
   return (
     <Layout className="app-shell">
@@ -401,6 +443,37 @@ export default function App() {
                     )}
                   />
                   <label><Text strong>服务端口</Text><InputNumber value={installPort} min={1024} max={65535} onChange={(value) => setInstallPort(Number(value || 8080))} /></label>
+                  <div className="install-field">
+                    <Text strong>用户存储空间</Text>
+                    <div className="install-field-control">
+                      <div className="storage-select-row">
+                        <Select
+                          value={selectedStorageDir || undefined}
+                          loading={storageOptionsLoading}
+                          disabled={storageOptionsLoading || storageOptions.length === 0}
+                          optionList={storageOptions.map((option) => ({ label: storageOptionLabel(option), value: option.path }))}
+                          emptyContent="未检测到可用存储空间"
+                          onChange={(value) => {
+                            if (typeof value === 'string') setSelectedStorageDir(value);
+                          }}
+                        />
+                        <Tooltip content="刷新存储空间">
+                          <Button
+                            className="qvm-act-ic"
+                            icon={<IconRefresh />}
+                            loading={storageOptionsLoading}
+                            disabled={storageOptionsLoading}
+                            onClick={() => void loadStorageOptions()}
+                          />
+                        </Tooltip>
+                      </div>
+                      <Text type="tertiary" className="storage-option-detail">
+                        {selectedStorage
+                          ? `${selectedStorage.source || '根文件系统'} · ${selectedStorage.filesystem || '文件系统未知'} · 镜像目录 ${selectedStorage.path}`
+                          : '请刷新并选择可用存储空间'}
+                      </Text>
+                    </div>
+                  </div>
                   <Checkbox checked={riskConfirmed} onChange={(event) => setRiskConfirmed(Boolean(event.target.checked))}>
                     我已完成重要数据备份，了解飞牛兼容性限制及系统变更风险，并同意继续安装。
                   </Checkbox>
@@ -411,7 +484,7 @@ export default function App() {
               )}
               <Space wrap className="action-row">
                 {!status.installed ? (
-                  <Button type="primary" disabled={!riskConfirmed || !dependencyConfirmed || !status.kvmAvailable || busy} loading={submitting} onClick={() => void startJob('install', { channel: selectedChannel, port: installPort })}>安装{channelName(selectedChannel, channels)}</Button>
+                  <Button type="primary" disabled={!riskConfirmed || !dependencyConfirmed || !status.kvmAvailable || !selectedStorageDir || storageOptionsLoading || busy} loading={submitting} onClick={() => void startJob('install', { channel: selectedChannel, port: installPort, storageDir: selectedStorageDir })}>安装{channelName(selectedChannel, channels)}</Button>
                 ) : (
                   <>
                     <Button type="primary" disabled={busy} loading={submitting} onClick={() => void startJob('update', { channel: updateChannel })}>

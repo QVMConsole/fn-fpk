@@ -24,10 +24,11 @@ import (
 )
 
 type JobRequest struct {
-	Action  string `json:"action"`
-	Channel string `json:"channel,omitempty"`
-	Port    int    `json:"port,omitempty"`
-	Purge   bool   `json:"purge,omitempty"`
+	Action     string `json:"action"`
+	Channel    string `json:"channel,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	StorageDir string `json:"storageDir,omitempty"`
+	Purge      bool   `json:"purge,omitempty"`
 }
 
 type JobSnapshot struct {
@@ -114,6 +115,11 @@ func validateJobRequest(request JobRequest, catalog ReleaseCatalog) error {
 			if err := validatePort(request.Port); err != nil {
 				return err
 			}
+			if _, err := normalizeStorageDirectory(request.StorageDir); err != nil {
+				return err
+			}
+		} else if request.StorageDir != "" {
+			return errors.New("用户存储空间只能在首次安装时选择")
 		}
 	case "repair", "uninstall":
 	default:
@@ -275,7 +281,7 @@ func (m *JobManager) run(job *managedJob) {
 
 func (m *JobManager) execute(ctx context.Context, job *managedJob) error {
 	request := job.request
-	if err := m.preflight(request); err != nil {
+	if err := m.preflight(ctx, request); err != nil {
 		return err
 	}
 	m.update(job, 8, "运行环境检查通过")
@@ -337,6 +343,11 @@ func (m *JobManager) execute(ctx context.Context, job *managedJob) error {
 		if err := validateScriptPolicy(scriptPath); err != nil {
 			return rollback(err)
 		}
+		if request.Action == "install" {
+			if err := validateScriptStorageCLI(scriptPath); err != nil {
+				return rollback(err)
+			}
+		}
 		m.update(job, 34, "正在下载"+channel.Name+"发行包")
 		archivePath, err = m.downloadArtifact(ctx, job, channel.artifact, true)
 		if err != nil {
@@ -356,7 +367,12 @@ func (m *JobManager) execute(ctx context.Context, job *managedJob) error {
 			if port == 0 {
 				port = 8080
 			}
-			args = append(args, "--port", fmt.Sprintf("%d", port))
+			storage, err := resolveStorageDirectory(ctx, request.StorageDir)
+			if err != nil {
+				return rollback(err)
+			}
+			m.log(job, "用户存储空间: "+storage.Path)
+			args = append(args, "--port", fmt.Sprintf("%d", port), "--storage-dir", storage.Path)
 		}
 		m.update(job, 64, "正在执行"+jobActionName(request.Action))
 		if err := m.runCommand(ctx, job, nil, "bash", args...); err != nil {
@@ -456,7 +472,7 @@ func (m *JobManager) execute(ctx context.Context, job *managedJob) error {
 	return nil
 }
 
-func (m *JobManager) preflight(request JobRequest) error {
+func (m *JobManager) preflight(ctx context.Context, request JobRequest) error {
 	if runtime.GOOS != "linux" {
 		return errors.New("安装维护任务仅支持 Linux")
 	}
@@ -483,6 +499,9 @@ func (m *JobManager) preflight(request JobRequest) error {
 			return err
 		}
 		if err := checkPortAvailable(port); err != nil {
+			return err
+		}
+		if _, err := resolveStorageDirectory(ctx, request.StorageDir); err != nil {
 			return err
 		}
 	}
@@ -625,6 +644,17 @@ func validateScriptPolicy(path string) error {
 		if strings.Contains(content, forbidden) {
 			return fmt.Errorf("安装脚本包含被禁止的系统升级操作: %s", forbidden)
 		}
+	}
+	return nil
+}
+
+func validateScriptStorageCLI(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(data), "--storage-dir)") {
+		return errors.New("安装脚本不支持用户存储空间参数，请等待发布端更新后重试")
 	}
 	return nil
 }

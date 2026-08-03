@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	ManagerVersion       = "1.0.28"
+	ManagerVersion       = "1.0.29"
 	defaultGatewayPrefix = "/app/qvmconsole-manager"
 	defaultInstallDir    = "/opt/kvm-console"
 	defaultServiceName   = "kvm-console.service"
