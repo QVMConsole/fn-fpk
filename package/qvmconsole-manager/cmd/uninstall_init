@@ -1,0 +1,166 @@
+#!/bin/bash
+set -u
+
+REMOVE_QVMCONSOLE="${wizard_remove_qvmconsole:-keep}"
+CONFIRMATION="${wizard_qvmconsole_uninstall_confirmation:-}"
+INSTALL_DIR="${QVMC_INSTALL_DIR:-/opt/kvm-console}"
+SYSTEMD_DIR="${QVMC_SYSTEMD_DIR:-/etc/systemd/system}"
+LIBVIRT_HOOKS_DIR="${QVMC_LIBVIRT_HOOKS_DIR:-/etc/libvirt/hooks}"
+GUESTFS_SUPERMIN_DIR="${QVMC_GUESTFS_SUPERMIN_DIR:-/usr/lib/x86_64-linux-gnu/guestfs/supermin.d}"
+MANAGED_NETWORK="${QVMC_MANAGED_NETWORK:-qvmconsole-fnos}"
+NVRAM_HOOK_MARKER="# qvmconsole-manager: fnOS NVRAM compatibility"
+APPARMOR_DIR="${QVMC_APPARMOR_DIR:-/etc/apparmor.d}"
+APPARMOR_BLOCK_BEGIN="# BEGIN qvmconsole-manager fnOS storage access"
+APPARMOR_BLOCK_END="# END qvmconsole-manager fnOS storage access"
+FAILED=0
+
+write_message() {
+  printf '%s\n' "$1"
+  if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+    printf '%s\n' "$1" >> "$TRIM_TEMP_LOGFILE"
+  fi
+}
+
+fail() {
+  FAILED=1
+  write_message "卸载清理失败: $1"
+}
+
+remove_file() {
+  local path="$1"
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    rm -f -- "$path" || fail "无法删除 $path"
+  fi
+}
+
+remove_empty_dir() {
+  local path="$1"
+  if [ -d "$path" ]; then
+    rmdir -- "$path" 2>/dev/null || true
+  fi
+}
+
+remove_managed_hook() {
+  local path="$1"
+  if [ -f "$path" ] && grep -Fqs "$NVRAM_HOOK_MARKER" "$path"; then
+    remove_file "$path"
+  fi
+}
+
+remove_managed_apparmor_block() {
+  local path="$1"
+  local temporary
+  if [ ! -f "$path" ] || ! grep -Fqs "$APPARMOR_BLOCK_BEGIN" "$path"; then
+    return 0
+  fi
+  if ! grep -Fqs "$APPARMOR_BLOCK_END" "$path"; then
+    fail "AppArmor 管理标记不完整: $path"
+    return 0
+  fi
+  temporary="$(mktemp)" || {
+    fail "无法创建 AppArmor 清理临时文件"
+    return 0
+  }
+  if ! awk -v begin="$APPARMOR_BLOCK_BEGIN" -v end="$APPARMOR_BLOCK_END" '
+    $0 == begin { skip = 1; next }
+    $0 == end { skip = 0; next }
+    !skip { print }
+  ' "$path" > "$temporary"; then
+    rm -f -- "$temporary"
+    fail "无法清理 AppArmor 规则: $path"
+    return 0
+  fi
+  if ! mv -f -- "$temporary" "$path"; then
+    rm -f -- "$temporary"
+    fail "无法更新 AppArmor 规则: $path"
+  fi
+}
+
+remove_managed_apparmor_file() {
+  local path="$1"
+  if [ -f "$path" ] && grep -Fqs "$APPARMOR_BLOCK_BEGIN" "$path"; then
+    remove_file "$path"
+  fi
+}
+
+if [ "${TRIM_APP_STATUS:-}" = "UPGRADE" ]; then
+  exit 0
+fi
+
+if [ "$CONFIRMATION" != "UNINSTALL QVMCONSOLE" ]; then
+  write_message "请输入 UNINSTALL QVMCONSOLE 完成卸载确认。"
+  exit 1
+fi
+
+case "$REMOVE_QVMCONSOLE" in
+  remove) ;;
+  *)
+    exit 0
+    ;;
+esac
+
+if [ "$(id -u)" -ne 0 ]; then
+  write_message "联动卸载需要 root 权限。"
+  exit 1
+fi
+
+# 仅允许删除 /opt 下的目标目录，防止异常环境变量扩大删除范围。
+if command -v realpath >/dev/null 2>&1; then
+  INSTALL_DIR="$(realpath -m -- "$INSTALL_DIR")"
+fi
+case "$INSTALL_DIR" in
+  /opt/*)
+    case "$INSTALL_DIR" in
+      */../*|*/..)
+        write_message "QVMConsole 安装目录不安全，已取消联动卸载: $INSTALL_DIR"
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    write_message "QVMConsole 安装目录不安全，已取消联动卸载: $INSTALL_DIR"
+    exit 1
+    ;;
+esac
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl disable --now kvm-console.service >/dev/null 2>&1 || true
+  systemctl disable --now kvm-console-ovs-dnsmasq.service >/dev/null 2>&1 || true
+fi
+
+remove_file "$SYSTEMD_DIR/kvm-console.service"
+remove_file "$SYSTEMD_DIR/kvm-console-ovs-dnsmasq.service"
+remove_file "$SYSTEMD_DIR/kvm-console.service.d/50-fnos-network-compat.conf"
+remove_empty_dir "$SYSTEMD_DIR/kvm-console.service.d"
+remove_file "$SYSTEMD_DIR/kvm-console-bridges.service.d/50-fnos-network-compat.conf"
+remove_empty_dir "$SYSTEMD_DIR/kvm-console-bridges.service.d"
+
+remove_managed_hook "$LIBVIRT_HOOKS_DIR/qemu.d/50-qvmconsole-nvram-compat"
+remove_managed_hook "$LIBVIRT_HOOKS_DIR/qemu"
+remove_file "$LIBVIRT_HOOKS_DIR/qvmconsole-nvram-helper"
+remove_managed_apparmor_block "$APPARMOR_DIR/local/usr.lib.libvirt.virt-aa-helper"
+remove_managed_apparmor_block "$APPARMOR_DIR/local/abstractions/libvirt-qemu"
+remove_managed_apparmor_file "$APPARMOR_DIR/abstractions/libvirt-qemu.d/qvmconsole-manager-storage"
+if command -v apparmor_parser >/dev/null 2>&1 && [ -f "$APPARMOR_DIR/usr.lib.libvirt.virt-aa-helper" ]; then
+  apparmor_parser -r "$APPARMOR_DIR/usr.lib.libvirt.virt-aa-helper" >/dev/null 2>&1 || fail "无法重新加载 virt-aa-helper AppArmor 规则"
+fi
+remove_file "$GUESTFS_SUPERMIN_DIR/packages-qvmconsole"
+remove_file "$GUESTFS_SUPERMIN_DIR/hostfiles-qvmconsole"
+
+if command -v virsh >/dev/null 2>&1 && virsh net-info "$MANAGED_NETWORK" >/dev/null 2>&1; then
+  virsh net-destroy "$MANAGED_NETWORK" >/dev/null 2>&1 || true
+  virsh net-undefine "$MANAGED_NETWORK" >/dev/null 2>&1 || fail "无法删除 libvirt 网络 $MANAGED_NETWORK"
+fi
+
+rm -rf -- "$INSTALL_DIR" || fail "无法删除 QVMConsole 安装目录 $INSTALL_DIR"
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || fail "无法重新加载 systemd 配置"
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  exit 1
+fi
+
+write_message "已卸载 QVMConsole 及管理器创建的飞牛兼容修补。"
+exit 0

@@ -1,0 +1,17 @@
+{
+  ".url": {
+    "qvmconsole-manager.main": {
+      "title": "QVMConsole 管理器",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "",
+      "gatewayPrefix": "/app/qvmconsole-manager",
+      "gatewaySocket": "app.sock",
+      "url": "/app/qvmconsole-manager",
+      "allUsers": false,
+      "control": {
+        "accessPerm": "readonly"
+      }
+    }
+  }
+}

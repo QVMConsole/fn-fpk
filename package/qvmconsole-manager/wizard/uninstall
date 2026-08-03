@@ -1,0 +1,45 @@
+[
+  {
+    "stepTitle": "卸载选项",
+    "items": [
+      {
+        "type": "radio",
+        "field": "wizard_remove_qvmconsole",
+        "label": "卸载范围",
+        "initValue": "keep",
+        "options": [
+          {
+            "label": "仅卸载管理器，保留 QVMConsole 和兼容修补",
+            "value": "keep"
+          },
+          {
+            "label": "同时卸载 QVMConsole 和兼容修补",
+            "value": "remove"
+          }
+        ],
+        "helpText": "默认保留 QVMConsole。选择联动卸载后会删除 QVMConsole 服务、安装目录和管理器创建的飞牛兼容修补。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_qvmconsole_uninstall_confirmation",
+        "label": "卸载确认",
+        "placeholder": "输入 UNINSTALL QVMCONSOLE",
+        "helpText": "输入 UNINSTALL QVMCONSOLE 后才能继续卸载。",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入 UNINSTALL QVMCONSOLE 完成卸载确认"
+          },
+          {
+            "pattern": "^UNINSTALL QVMCONSOLE$",
+            "message": "确认词不正确"
+          }
+        ]
+      },
+      {
+        "type": "tips",
+        "helpText": "联动卸载会停止 QVMConsole，并删除 /opt/kvm-console、NVRAM 钩子、网络命令兼容层、libguestfs 初始化文件和 qvmconsole-fnos 网络。虚拟机磁盘、模板和 libvirt 域定义不会删除；请先关闭使用 qvmconsole-fnos 网络的虚拟机。"
+      }
+    ]
+  }
+]

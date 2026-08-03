@@ -1,0 +1,3 @@
+#!/bin/bash
+# 联动卸载在 uninstall_init 中完成，确保可以读取并校验向导输入。
+exit 0

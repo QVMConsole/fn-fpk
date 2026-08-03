@@ -1,0 +1,46 @@
+# 编辑器和操作系统文件
+/.vscode/
+/.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# 本地参考资料、只读上游源码和发行包
+/FN-Docs/
+/QVMConsole/
+/二进制/
+
+# 前端依赖和编译缓存
+/web/node_modules/
+/web/.vite/
+/web/tsconfig*.tsbuildinfo
+/webassets/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Go 编译与测试产物
+*.test
+coverage.out
+coverage.html
+*.tmp
+*.bak
+/package/qvmconsole-manager/app/server/qvmconsole-manager
+
+# 打包工具、运行数据和发布产物
+/.data/
+/.tools/
+/dist/
+/*.fpk
+/*.fpk.sha256
+
+# 本地运行时文件
+*.log
+*.pid
+*.sock
+.env
+.env.*
+!.env.example

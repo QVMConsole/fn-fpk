@@ -1,0 +1,16 @@
+appname=qvmconsole-manager
+version=1.0.28
+display_name=QVMConsole 管理器
+desc=用于在飞牛 fnOS 上在线安装、更新和管理 QVMConsole，不在 FPK 内嵌入 QVMConsole 安装包。
+source=thirdparty
+platform=x86
+maintainer=QVMConsole Manager Team
+distributor=QVMConsole Manager Team
+os_min_version=1.2.0
+desktop_uidir=ui
+desktop_applaunchname=qvmconsole-manager.main
+ctl_stop=true
+checkport=false
+install_type=root
+disable_authorization_path=true
+changelog=新增常驻更新入口，更新时重新下载并校验最新安装脚本和发行包。

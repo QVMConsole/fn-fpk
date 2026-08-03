@@ -1,0 +1,3 @@
+#!/bin/bash
+chmod 0755 "${TRIM_APPDEST}/server/qvmconsole-manager"
+exit 0

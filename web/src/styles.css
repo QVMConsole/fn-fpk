@@ -1,0 +1,82 @@
+:root {
+  font-family: Inter, "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #182033;
+  background: #f4f6fa;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body { background: #f4f6fa; }
+
+.app-shell { min-height: 100vh; background: transparent; }
+.app-header {
+  height: auto;
+  min-height: 86px;
+  padding: 20px clamp(20px, 4vw, 52px);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: inherit;
+  background: rgba(255, 255, 255, .88);
+  border-bottom: 1px solid rgba(49, 72, 111, .1);
+  backdrop-filter: blur(18px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.app-title { margin: 2px 0 0 !important; }
+.eyebrow { font-size: 10px; line-height: 1.4; letter-spacing: .16em; font-weight: 700; color: #707d99; }
+.app-content { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 22px 0 42px; }
+.section-gap { margin-top: 16px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr); gap: 16px; }
+.hero-card { min-height: 228px; }
+.accent-card { background: radial-gradient(circle at 100% 0, rgba(61, 110, 247, .2), transparent 42%), linear-gradient(135deg, #fff, #f8faff); }
+.metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.metric-card .semi-card-body { min-height: 106px; display: flex; flex-direction: column; justify-content: space-between; }
+.channel-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.channel-card { text-align: left; border: 1px solid #dce2ec; background: #fff; border-radius: 12px; padding: 18px; color: inherit; cursor: pointer; transition: .18s ease; }
+.channel-card:hover { transform: translateY(-1px); border-color: #9eb5f7; box-shadow: 0 8px 22px rgba(42, 73, 131, .08); }
+.channel-card.selected { border-color: #3d6ef7; box-shadow: 0 0 0 2px rgba(61, 110, 247, .14); }
+.channel-card p { color: #68748c; min-height: 42px; }
+.channel-card code { color: #7b879d; font-size: 11px; }
+.channel-head { display: flex; justify-content: space-between; align-items: center; }
+.install-options { margin-top: 18px; display: grid; gap: 14px; max-width: 720px; }
+.install-notice p { margin: 0; }
+.install-notice p + p { margin-top: 8px; }
+.install-options label { display: grid; grid-template-columns: 90px 220px; gap: 14px; align-items: center; }
+.action-row { margin-top: 18px; }
+.log-view textarea { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace !important; font-size: 12px; line-height: 1.65; background: #111827 !important; color: #c9d4e7 !important; }
+.drawer-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.modal-field { margin-top: 14px; }
+.full-width { width: 100%; }
+.loading-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.qvm-act-ic { width: 32px; height: 32px; }
+
+body[theme-mode='dark'] {
+  --soft-dark-text: #b8c1cf;
+  color: var(--soft-dark-text);
+  background: #0f141d;
+}
+body[theme-mode='dark'] .app-shell { background: #0f141d; }
+body[theme-mode='dark'] .app-header { background: rgba(18, 25, 36, .9); border-color: rgba(167, 184, 213, .1); }
+body[theme-mode='dark'] .app-title,
+body[theme-mode='dark'] .semi-card,
+body[theme-mode='dark'] .semi-typography { color: var(--soft-dark-text); }
+body[theme-mode='dark'] .accent-card { background: radial-gradient(circle at 100% 0, rgba(74, 111, 218, .22), transparent 42%), linear-gradient(135deg, #171e29, #141a24); }
+body[theme-mode='dark'] .channel-card { background: #171e29; border-color: #2b3546; color: var(--soft-dark-text); }
+body[theme-mode='dark'] .channel-card.selected { border-color: #6d8fe8; }
+body[theme-mode='dark'] .channel-card p { color: #9ea9b9; }
+
+@media (max-width: 800px) {
+  .app-header { align-items: flex-start; gap: 12px; }
+  .hero-grid { grid-template-columns: 1fr; }
+  .channel-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  .app-header { padding: 16px; flex-direction: column; }
+  .app-content { width: calc(100% - 24px); padding-top: 10px; }
+  .metric-grid { grid-template-columns: 1fr; }
+  .install-options label { grid-template-columns: 1fr; }
+}

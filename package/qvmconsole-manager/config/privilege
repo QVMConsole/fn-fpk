@@ -1,0 +1,7 @@
+{
+  "defaults": {
+    "run-as": "root"
+  },
+  "username": "qvmconsole_manager",
+  "groupname": "qvmconsole_manager"
+}

@@ -1,0 +1,111 @@
+#!/bin/bash
+
+LOG_FILE="${TRIM_PKGVAR}/manager.log"
+PID_FILE="${TRIM_PKGVAR}/manager.pid"
+SOCKET_PATH="${TRIM_APPDEST}/app.sock"
+APP_BIN="${TRIM_APPDEST}/server/qvmconsole-manager"
+
+log_msg() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
+
+read_pid() {
+  if [ -f "$PID_FILE" ]; then
+    head -n 1 "$PID_FILE" | tr -d '[:space:]'
+  fi
+}
+
+check_process() {
+  local pid="$1"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+status_app() {
+  local pid
+  pid="$(read_pid)"
+  if check_process "$pid"; then
+    return 0
+  fi
+  rm -f "$PID_FILE" "$SOCKET_PATH"
+  return 1
+}
+
+start_app() {
+  if status_app; then
+    return 0
+  fi
+  chmod 0755 "$APP_BIN" 2>> "$LOG_FILE" || true
+  if [ ! -x "$APP_BIN" ]; then
+    echo "管理器程序不存在或不可执行: $APP_BIN" > "$TRIM_TEMP_LOGFILE"
+    return 1
+  fi
+
+  mkdir -p "$TRIM_PKGVAR"
+  rm -f "$SOCKET_PATH"
+  log_msg "正在启动 QVMConsole 管理器"
+  umask 007
+  QVMC_MANAGER_SOCKET="$SOCKET_PATH" \
+  QVMC_MANAGER_VAR="$TRIM_PKGVAR" \
+  QVMC_MANAGER_GATEWAY_PREFIX="/app/qvmconsole-manager" \
+  LANG="en_US.UTF-8" \
+  LC_ALL="en_US.UTF-8" \
+  nohup "$APP_BIN" >> "$LOG_FILE" 2>&1 &
+  echo "$!" > "$PID_FILE"
+
+  local count=0
+  while [ ! -S "$SOCKET_PATH" ] && [ "$count" -lt 15 ]; do
+    if ! status_app; then
+      echo "管理器启动失败，请查看 $LOG_FILE" > "$TRIM_TEMP_LOGFILE"
+      return 1
+    fi
+    sleep 1
+    count=$((count + 1))
+  done
+  if [ ! -S "$SOCKET_PATH" ]; then
+    stop_app
+    echo "管理器启动超时，请查看 $LOG_FILE" > "$TRIM_TEMP_LOGFILE"
+    return 1
+  fi
+  log_msg "QVMConsole 管理器已启动"
+}
+
+stop_app() {
+  local pid
+  pid="$(read_pid)"
+  if ! check_process "$pid"; then
+    rm -f "$PID_FILE" "$SOCKET_PATH"
+    return 0
+  fi
+
+  log_msg "正在停止 QVMConsole 管理器"
+  kill -TERM "$pid" 2>> "$LOG_FILE" || true
+  local count=0
+  while check_process "$pid" && [ "$count" -lt 10 ]; do
+    sleep 1
+    count=$((count + 1))
+  done
+  if check_process "$pid"; then
+    kill -KILL "$pid" 2>> "$LOG_FILE" || true
+  fi
+  rm -f "$PID_FILE" "$SOCKET_PATH"
+  log_msg "QVMConsole 管理器已停止"
+}
+
+case "$1" in
+  start)
+    start_app
+    ;;
+  stop)
+    stop_app
+    ;;
+  status)
+    if status_app; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  *)
+    echo "未知操作: $1" > "$TRIM_TEMP_LOGFILE"
+    exit 1
+    ;;
+esac
