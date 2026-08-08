@@ -135,6 +135,10 @@ grep -F 'qvmconsole-manager fnOS storage access' /etc/apparmor.d/local/usr.lib.l
 
 如果混合 VPC 与桥接直通网卡的虚拟机已经成功启动、IP 也正常，但页面仍提示“从桥接直通交换机切换回 VPC 需要先关闭虚拟机”，应升级到 1.0.9。该问题是 QVMConsole 在启动后应用 VPC 绑定时遍历了同一虚拟机的所有网卡；管理器会在专用兼容视图中保留桥接逻辑名称，并将其标记为 `direct`，避免其他桥接网卡触发 VPC 网卡的切换校验。
 
+如果带 VLAN 的 VPC 网卡启动时报“启动成功，但应用 VPC 网络失败”，应升级到 1.0.31 并执行一次“修复配置”。飞牛兼容层会把数据库中的 VLAN 绑定写入 `/opt/kvm-console/.fnos-compat/vpc-vlans.tsv`，再由 QVMConsole 服务专用的 `virsh dumpxml` 还原给上游视图。真实 libvirt 网卡仍保持飞牛可稳定保留的 Linux 网桥或 macvtap 配置，不依赖真实 `br-ovs` 或 OVS 端口存在。
+
+如果升级 1.0.31 后仍提示“启动成功，但应用 VPC 网络失败: 桥接直通交换机切换需要先关闭虚拟机”，应升级到 1.0.32 并再次执行“修复配置”。该问题是运行态 `virsh domiflist` 仍暴露了飞牛真实 macvtap/direct 父接口，QVMConsole 未看到桥接直通交换机的逻辑桥名；1.0.32 会生成 `/opt/kvm-console/.fnos-compat/vpc-runtime-bridges.tsv` 并在专用 `domiflist` 视图中还原。
+
 如果概览页提示某台虚拟机需要重启，说明标准 VirtIO 网卡已经写入持久配置，但当前 QEMU 运行态没有可用 PCI 热插槽或热插被旧版 libvirt 拒绝。正常关闭并重新启动该虚拟机后即可加载网卡；管理器不会自动强制关机。
 
 可在设备终端检查：

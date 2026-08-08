@@ -12,14 +12,14 @@ QVMConsole 管理器是独立的飞牛 fnOS FPK。FPK 只包含管理器，不�
 ## 安装 FPK
 
 1. 在飞牛应用中心选择手动安装。
-2. 上传 `qvmconsole-manager-1.0.30-x86_64.fpk`。
+2. 上传 `qvmconsole-manager-1.0.32-x86_64.fpk`。
 3. 安装完成后，从飞牛桌面打开“QVMConsole 管理器”。
 4. 确认概览页中的 KVM、libvirt 和 Open vSwitch 状态。
 
 也可以在设备终端使用：
 
 ```bash
-appcenter-cli install-fpk /path/to/qvmconsole-manager-1.0.30-x86_64.fpk --volume 1
+appcenter-cli install-fpk /path/to/qvmconsole-manager-1.0.32-x86_64.fpk --volume 1
 appcenter-cli start qvmconsole-manager
 ```
 
@@ -120,6 +120,10 @@ QVMConsole 本体带有 `X-Frame-Options: DENY`，因此只内嵌管理器，QVM
 1.0.14 起，兼容层还会扫描全部 libvirt 持久域定义。即使旧虚拟机缺少 `vpc_vm_bindings` 数据库记录，只要网卡仍引用已被飞牛清理的 `br-ovs`，也会转换为稳定的 libvirt 网桥。新建虚拟机在执行 `virsh start` 前同步转换，不再依赖 15 秒后台轮询；后台只处理磁盘存在且已稳定至少 60 秒的旧域，避免与创建失败后的资源清理竞争。转换会保留原有 MAC、网卡型号和 PCI 地址；运行中的虚拟机只更新持久配置，并在概览页提示重启。
 
 1.0.15 起，桥接直通映射会检查物理上联网卡是否已是飞牛 OVS 的从端口。如果 `ovs-vsctl port-to-br` 返回系统 OVS 网桥，macvtap 会改用该 OVS 内部接口作为父接口，避免直接挂在物理从端口时出现 `Device or resource busy`。已有虚拟机的持久域 XML 会自动迁移到解析后的父接口。
+
+1.0.31 起，兼容层会从 QVMConsole 的 VPC 绑定数据库生成 `vpc-vlans.tsv`，并在 QVMConsole 服务专用的 `virsh dumpxml` 视图中按虚拟机和网卡顺序还原 `<vlan>` 标签。飞牛实际 libvirt 配置仍使用稳定的 Linux 网桥或 macvtap，不写回 Open vSwitch VLAN XML；该映射只用于让上游启动后应用 VPC 网络时识别当前 VLAN 已匹配，避免对已启动虚拟机执行不必要的运行态网卡热拔/热插。
+
+1.0.32 起，兼容层会额外生成 `vpc-runtime-bridges.tsv`，并在 QVMConsole 服务专用的 `virsh domiflist` 视图中按虚拟机和网卡顺序还原桥接直通交换机的逻辑桥名。真实运行态仍可使用飞牛稳定的 macvtap `direct` 父接口；该映射只用于避免上游在启动后应用 VPC 绑定时把已转换的直通网卡误判为正在切换交换机。
 
 卸载 QVMConsole 时：
 

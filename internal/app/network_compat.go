@@ -29,6 +29,8 @@ const (
 	ovsDNSMasqService        = "kvm-console-ovs-dnsmasq.service"
 	bridgeRestoreService     = "kvm-console-bridges.service"
 	directBridgeMapName      = "direct-bridges.tsv"
+	vpcVLANMapName           = "vpc-vlans.tsv"
+	vpcRuntimeBridgeMapName  = "vpc-runtime-bridges.tsv"
 	legacyDomainMinAge       = time.Minute
 )
 
@@ -103,6 +105,7 @@ type vpcBinding struct {
 	BridgeMode       string
 	UplinkIF         string
 	OriginalUplinkIF string
+	VLANID           int
 }
 
 type directBridgeMapping struct {
@@ -163,11 +166,15 @@ func EnsureNetworkCompatibility(ctx context.Context, cfg Config) (state NetworkC
 	}
 	state.Network = network
 	state.Bridge = bridge
+	bindings, bindingErr := loadVPCBindings(ctx, cfg)
+	if bindingErr != nil {
+		return state, bindingErr
+	}
 	directBridges, mappingErr := loadDirectBridgeMappings(ctx, cfg)
 	if mappingErr != nil {
 		return state, mappingErr
 	}
-	commandCompatChanged, commandCompatErr := installNetworkCommandCompatibility(ctx, cfg, bridge, directBridges)
+	commandCompatChanged, commandCompatErr := installNetworkCommandCompatibility(ctx, cfg, bridge, directBridges, bindings)
 	if commandCompatErr != nil {
 		return state, commandCompatErr
 	}
@@ -178,7 +185,7 @@ func EnsureNetworkCompatibility(ctx context.Context, cfg Config) (state NetworkC
 		}
 	}
 
-	repaired, pending, reconcileErrors := reconcileVPCBindings(ctx, cfg, bridge)
+	repaired, pending, reconcileErrors := reconcileVPCBindings(ctx, cfg, bridge, bindings)
 	state.RepairedVMs = append(state.RepairedVMs, repaired...)
 	state.PendingRestart = append(state.PendingRestart, pending...)
 	state.Errors = append(state.Errors, reconcileErrors...)
@@ -349,11 +356,7 @@ func prefixOverlaps(candidate netip.Prefix, existing []netip.Prefix) bool {
 	return false
 }
 
-func reconcileVPCBindings(ctx context.Context, cfg Config, bridge string) ([]string, []string, []string) {
-	bindings, err := loadVPCBindings(ctx, cfg)
-	if err != nil {
-		return nil, nil, []string{err.Error()}
-	}
+func reconcileVPCBindings(ctx context.Context, cfg Config, bridge string, bindings []vpcBinding) ([]string, []string, []string) {
 	grouped := make(map[string][]vpcBinding)
 	for _, binding := range bindings {
 		grouped[binding.VMName] = append(grouped[binding.VMName], binding)
@@ -414,7 +417,15 @@ func loadVPCBindings(ctx context.Context, cfg Config) ([]vpcBinding, error) {
 		       COALESCE(NULLIF(b.nic_model, ''), 'virtio'),
 		       COALESCE(s.bridge_name, ''),
 		       COALESCE(s.bridge_mode, ''),
-		       COALESCE(n.uplink_if, '')
+		       COALESCE(n.uplink_if, ''),
+		       COALESCE(
+		         CASE
+		           WHEN lower(trim(COALESCE(s.bridge_mode, ''))) = 'bridge'
+		             THEN NULLIF(s.bridge_vlan_id, 0)
+		           ELSE NULLIF(s.vlan_id, 0)
+		         END,
+		         0
+		       )
 		FROM vpc_vm_bindings b
 		LEFT JOIN vpc_switches s ON s.id = b.switch_id
 		LEFT JOIN network_bridges n ON n.name = s.bridge_name
@@ -436,6 +447,7 @@ func loadVPCBindings(ctx context.Context, cfg Config) ([]vpcBinding, error) {
 			&binding.BridgeName,
 			&binding.BridgeMode,
 			&binding.UplinkIF,
+			&binding.VLANID,
 		); err != nil {
 			return nil, err
 		}
@@ -877,7 +889,7 @@ func uniqueSorted(values []string) []string {
 	return result
 }
 
-func installNetworkCommandCompatibility(ctx context.Context, cfg Config, bridge string, directBridges []directBridgeMapping) (bool, error) {
+func installNetworkCommandCompatibility(ctx context.Context, cfg Config, bridge string, directBridges []directBridgeMapping, bindings []vpcBinding) (bool, error) {
 	realVirsh, err := exec.LookPath("virsh")
 	if err != nil {
 		return false, errors.New("安装网络命令兼容层时未找到 virsh")
@@ -906,6 +918,14 @@ func installNetworkCommandCompatibility(ctx context.Context, cfg Config, bridge 
 	mappingPath := filepath.Join(filepath.Dir(compatDir), directBridgeMapName)
 	if _, writeErr := writeFileIfChanged(mappingPath, serializeDirectBridgeMappings(directBridges), 0o644); writeErr != nil {
 		return false, fmt.Errorf("写入桥接网卡映射失败: %w", writeErr)
+	}
+	vlanMapPath := filepath.Join(filepath.Dir(compatDir), vpcVLANMapName)
+	if _, writeErr := writeFileIfChanged(vlanMapPath, serializeVPCVLANMappings(bindings), 0o644); writeErr != nil {
+		return false, fmt.Errorf("写入 VPC VLAN 映射失败: %w", writeErr)
+	}
+	runtimeBridgeMapPath := filepath.Join(filepath.Dir(compatDir), vpcRuntimeBridgeMapName)
+	if _, writeErr := writeFileIfChanged(runtimeBridgeMapPath, serializeVPCRuntimeBridgeMappings(bindings), 0o644); writeErr != nil {
+		return false, fmt.Errorf("写入 VPC 运行态桥接映射失败: %w", writeErr)
 	}
 	changed := false
 	scripts := map[string]string{
@@ -938,7 +958,9 @@ Environment="QVMC_REAL_QEMU_IMG=%s"
 Environment="QVMC_LIBVIRT_BRIDGE=%s"
 Environment="QVMC_OVS_BRIDGE=%s"
 Environment="QVMC_DIRECT_BRIDGE_MAP=%s"
-`, compatDir, realVirsh, filepath.Join(cfg.SystemRoot, "etc", "libvirt", "hooks", nvramHelperFileName), realOVSVsctl, realOVSOfctl, realIP, realQEMUImg, bridge, readEnvValue(cfg.EnvPath(), "KVM_OVS_BRIDGE"), mappingPath)
+Environment="QVMC_VPC_VLAN_MAP=%s"
+Environment="QVMC_VPC_RUNTIME_BRIDGE_MAP=%s"
+`, compatDir, realVirsh, filepath.Join(cfg.SystemRoot, "etc", "libvirt", "hooks", nvramHelperFileName), realOVSVsctl, realOVSOfctl, realIP, realQEMUImg, bridge, readEnvValue(cfg.EnvPath(), "KVM_OVS_BRIDGE"), mappingPath, vlanMapPath, runtimeBridgeMapPath)
 	dropInPath := filepath.Join(dropInDir, "50-fnos-network-compat.conf")
 	dropInChanged, writeErr := writeFileIfChanged(dropInPath, dropIn, 0o644)
 	if writeErr != nil {
@@ -981,6 +1003,43 @@ func serializeDirectBridgeMappings(mappings []directBridgeMapping) string {
 	return output.String()
 }
 
+func serializeVPCVLANMappings(bindings []vpcBinding) string {
+	var output strings.Builder
+	for _, binding := range bindings {
+		vmName := strings.TrimSpace(binding.VMName)
+		if vmName == "" || strings.ContainsAny(vmName, "\r\n\t") || binding.InterfaceOrder < 0 || binding.VLANID <= 0 {
+			continue
+		}
+		output.WriteString(vmName)
+		output.WriteByte('\t')
+		output.WriteString(fmt.Sprintf("%d", binding.InterfaceOrder))
+		output.WriteByte('\t')
+		output.WriteString(fmt.Sprintf("%d", binding.VLANID))
+		output.WriteByte('\n')
+	}
+	return output.String()
+}
+
+func serializeVPCRuntimeBridgeMappings(bindings []vpcBinding) string {
+	var output strings.Builder
+	for _, binding := range bindings {
+		vmName := strings.TrimSpace(binding.VMName)
+		bridgeName := strings.TrimSpace(binding.BridgeName)
+		if !strings.EqualFold(strings.TrimSpace(binding.BridgeMode), directBridgeMode) ||
+			vmName == "" || strings.ContainsAny(vmName, "\r\n\t") ||
+			binding.InterfaceOrder < 0 || !interfaceNamePattern.MatchString(bridgeName) {
+			continue
+		}
+		output.WriteString(vmName)
+		output.WriteByte('\t')
+		output.WriteString(fmt.Sprintf("%d", binding.InterfaceOrder))
+		output.WriteByte('\t')
+		output.WriteString(bridgeName)
+		output.WriteByte('\n')
+	}
+	return output.String()
+}
+
 func writeFileIfChanged(path, content string, mode os.FileMode) (bool, error) {
 	if current, err := os.ReadFile(path); err == nil && string(current) == content {
 		if chmodErr := os.Chmod(path, mode); chmodErr != nil {
@@ -1011,6 +1070,8 @@ LIBVIRT_HELPER="${QVMC_LIBVIRT_HELPER:-/etc/libvirt/hooks/qvmconsole-nvram-helpe
 OVS_BRIDGE="${QVMC_OVS_BRIDGE:-br-ovs}"
 LIBVIRT_BRIDGE="${QVMC_LIBVIRT_BRIDGE:-virbr0}"
 BRIDGE_MAP="${QVMC_DIRECT_BRIDGE_MAP:-/opt/kvm-console/.fnos-compat/direct-bridges.tsv}"
+VLAN_MAP="${QVMC_VPC_VLAN_MAP:-/opt/kvm-console/.fnos-compat/vpc-vlans.tsv}"
+RUNTIME_BRIDGE_MAP="${QVMC_VPC_RUNTIME_BRIDGE_MAP:-/opt/kvm-console/.fnos-compat/vpc-runtime-bridges.tsv}"
 
 	transform_xml() {
 		awk -v ovs="$OVS_BRIDGE" -v bridge="$LIBVIRT_BRIDGE" -v map_file="$BRIDGE_MAP" '
@@ -1123,13 +1184,23 @@ BRIDGE_MAP="${QVMC_DIRECT_BRIDGE_MAP:-/opt/kvm-console/.fnos-compat/direct-bridg
 }
 
 restore_xml() {
-	awk -v ovs="$OVS_BRIDGE" -v bridge="$LIBVIRT_BRIDGE" -v map_file="$BRIDGE_MAP" '
+	local domain="${1:-}"
+	awk -v domain="$domain" -v ovs="$OVS_BRIDGE" -v bridge="$LIBVIRT_BRIDGE" -v map_file="$BRIDGE_MAP" -v vlan_file="$VLAN_MAP" '
 	BEGIN {
+	  iface_order = 0
 	  while ((getline entry < map_file) > 0) {
 	    split(entry, fields, "\t")
 	    if (fields[1] != "" && fields[2] != "") reverse[fields[2]] = fields[1]
 	  }
 	  close(map_file)
+	  while ((getline entry < vlan_file) > 0) {
+	    split(entry, fields, "\t")
+	    order_key = fields[2] + 0
+	    if (fields[1] == domain && fields[2] ~ /^[0-9]+$/ && fields[3] ~ /^[0-9]+$/ && fields[3] > 0) {
+	      vlan[order_key] = fields[3]
+	    }
+	  }
+	  close(vlan_file)
 	}
 	{
 	  line = $0
@@ -1138,6 +1209,7 @@ restore_xml() {
 	    header = line
 	    before_source = ""
 	    source_seen = 0
+	    current_order = iface_order
 	    next
 	  }
 	  if (in_interface && !source_seen && line ~ /<source[[:space:]]/) {
@@ -1166,6 +1238,11 @@ restore_xml() {
 	    printf "%s", before_source
 	    print line
 	    if (display_bridge != "") print "      <virtualport type=\047openvswitch\047/>"
+	    if (display_bridge != "" && vlan[current_order] != "") {
+	      print "      <vlan>"
+	      print "        <tag id=\047" vlan[current_order] "\047/>"
+	      print "      </vlan>"
+	    }
 	    source_seen = 1
 	    next
 	  }
@@ -1175,13 +1252,17 @@ restore_xml() {
 	      printf "%s", before_source
 	      print line
 	      in_interface = 0
+	      iface_order++
 	      next
 	    }
 	    before_source = before_source line ORS
 	    next
 	  }
 	  print line
-	  if (line ~ /<\/interface>/) in_interface = 0
+	  if (line ~ /<\/interface>/) {
+	    in_interface = 0
+	    iface_order++
+	  }
 	}'
 }
 
@@ -1235,10 +1316,17 @@ case "${1:-}" in
 	  exec "$REAL" "$@"
 	  ;;
 	dumpxml)
+	  domain=""
+	  for argument in "${@:2}"; do
+	    case "$argument" in
+	      -*) ;;
+	      *) domain="$argument"; break ;;
+	    esac
+	  done
 	  temporary="$(mktemp /tmp/qvmc-virsh-dump.XXXXXX.xml)"
 	  trap 'rm -f "$temporary"' EXIT
 	  if "$REAL" "$@" > "$temporary"; then
-	    restore_xml < "$temporary"
+	    restore_xml "$domain" < "$temporary"
 	    exit 0
 	  else
 	    status=$?
@@ -1267,15 +1355,35 @@ case "${1:-}" in
 	  exec "$REAL" "${args[@]}"
 	  ;;
 	domiflist)
-	  "$REAL" "$@" | awk -v source="$LIBVIRT_BRIDGE" -v target="$OVS_BRIDGE" -v map_file="$BRIDGE_MAP" '
+	  domain=""
+	  for argument in "${@:2}"; do
+	    case "$argument" in
+	      -*) ;;
+	      *) domain="$argument"; break ;;
+	    esac
+	  done
+	  "$REAL" "$@" | awk -v domain="$domain" -v source="$LIBVIRT_BRIDGE" -v target="$OVS_BRIDGE" -v map_file="$BRIDGE_MAP" -v runtime_map_file="$RUNTIME_BRIDGE_MAP" '
 	    BEGIN {
 	      while ((getline entry < map_file) > 0) {
 	        split(entry, fields, "\t")
 	        if (fields[1] != "" && fields[2] != "") reverse[fields[2]] = fields[1]
 	      }
 	      close(map_file)
+	      while ((getline entry < runtime_map_file) > 0) {
+	        split(entry, fields, "\t")
+	        order_key = fields[2] + 0
+	        if (fields[1] == domain && fields[2] ~ /^[0-9]+$/ && fields[3] != "") runtime_bridge[order_key] = fields[3]
+	      }
+	      close(runtime_map_file)
 	    }
-	    NR > 2 && $3 == source {$3 = target}
+	    NR > 2 && NF >= 5 {
+	      row_order = seen++
+	      if (runtime_bridge[row_order] != "") {
+	        $3 = runtime_bridge[row_order]
+	      } else if ($3 == source) {
+	        $3 = target
+	      }
+	    }
 	    # 保留 direct 类型，避免混合 VPC/桥接网卡被上游误判为运行态切换网络。
 	    NR > 2 && $2 == "direct" && reverse[$3] != "" {$3 = reverse[$3]}
 	    {print}'
